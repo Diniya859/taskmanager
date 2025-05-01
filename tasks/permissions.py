@@ -1,12 +1,13 @@
 from rest_framework.permissions import BasePermission
-from users.permissions import IsAdmin, IsSuperAdmin
 
-class IsTaskOwner(BasePermission):
-    def has_object_permission(self, request, view, obj):
-        return obj.assigned_to == request.user
+class IsSuperAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_superadmin
 
-class CanManageTasks(IsAdmin):
-    pass
+class IsAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_admin
 
-class CanViewCompletionReports(IsAdmin):
-    pass
+class IsUser(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_user

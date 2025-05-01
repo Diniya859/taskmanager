@@ -1,8 +1,8 @@
 from django.urls import path
-from .views import UserCreateView, UserListView, UserDetailView
+from .views import TaskListView, TaskDetailView, TaskCompletionReportView
 
 urlpatterns = [
-    path('', UserListView.as_view(), name='user-list'),
-    path('create/', UserCreateView.as_view(), name='user-create'),
-    path('<int:pk>/', UserDetailView.as_view(), name='user-detail'),
+    path('tasks/', TaskListView.as_view(), name='task-list'),
+    path('tasks/<int:pk>/', TaskDetailView.as_view(), name='task-detail'),
+    path('tasks/<int:pk>/completion-report/', TaskCompletionReportView.as_view(), name='task-completion-report'),
 ]

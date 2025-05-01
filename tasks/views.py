@@ -1,67 +1,124 @@
-from rest_framework import generics, permissions, status
+from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Task, CompletionReport
-from .serializers import TaskSerializer, CompletionReportSerializer, TaskWithReportSerializer
-from .permissions import IsTaskOwner, CanManageTasks, CanViewCompletionReports
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied, NotFound, ValidationError
 from users.models import CustomUser
+from .models import Task
+from .serializers import (
+    TaskSerializer,
+    TaskCreateSerializer,
+    TaskUpdateSerializer,
+    TaskCompletionReportSerializer
+)
+
+from django.shortcuts import render
 
 
-class TaskCreateView(generics.CreateAPIView):
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
-    permission_classes = [CanManageTasks]
+def task_list(request):
+    user = request.user
+    if user.role == user.Role.USER:
+        tasks = Task.objects.filter(assigned_to=user)
+    elif user.role == user.Role.ADMIN:
+        tasks = Task.objects.filter(assigned_by=user) | Task.objects.filter(assigned_to__assigned_admin=user)
+    else:  # SuperAdmin
+        tasks = Task.objects.all()
 
-    def perform_create(self, serializer):
-        serializer.save(assigned_by=self.request.user)
+    context = {
+        'tasks': tasks,
+        'user': user,
+        'is_admin': user.role in [user.Role.ADMIN, user.Role.SUPERADMIN]
+    }
+    return render(request, 'task.html', context)
+class TaskListView(APIView):
+    """
+    GET /tasks: Fetch all tasks assigned to the logged-in user
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Only return tasks assigned to the requesting user
+        tasks = Task.objects.filter(assigned_to=request.user)
+        serializer = TaskSerializer(tasks, many=True)
+        return Response(serializer.data)
 
 
-class TaskListView(generics.ListAPIView):
-    serializer_class = TaskSerializer
-    permission_classes = [permissions.IsAuthenticated]
+class TaskDetailView(APIView):
+    """
+    PUT /tasks/{id}: Users can update task status
+    - When updating to Completed, requires Completion Report and Worked Hours
+    """
+    permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_superadmin or user.is_admin:
-            return Task.objects.all()
-        return Task.objects.filter(assigned_to=user)
+    def get_task(self, pk, user):
+        """Helper method to get task with permission check"""
+        try:
+            task = Task.objects.get(pk=pk)
+            if task.assigned_to != user:
+                raise PermissionDenied("You can only access tasks assigned to you")
+            return task
+        except Task.DoesNotExist:
+            raise NotFound("Task not found")
 
+    def get(self, request, pk):
+        """GET task details (not in requirements but useful)"""
+        task = self.get_task(pk, request.user)
+        serializer = TaskSerializer(task)
+        return Response(serializer.data)
 
-class TaskDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Task.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsTaskOwner | CanManageTasks]
+    def put(self, request, pk):
+        """Update task status"""
+        task = self.get_task(pk, request.user)
+        serializer = TaskUpdateSerializer(task, data=request.data, partial=True)
 
-    def get_serializer_class(self):
-        if self.request.user.is_admin or self.request.user.is_superadmin:
-            return TaskWithReportSerializer
-        return TaskSerializer
+        if serializer.is_valid():
+            # Additional validation for completion report
+            new_status = serializer.validated_data.get('status', task.status)
+            if new_status == 'COMPLETED':
+                if not serializer.validated_data.get('completion_report'):
+                    raise ValidationError(
+                        {"completion_report": "This field is required when marking task as completed"}
+                    )
+                if not serializer.validated_data.get('worked_hours'):
+                    raise ValidationError(
+                        {"worked_hours": "This field is required when marking task as completed"}
+                    )
 
-    def perform_update(self, serializer):
-        task = self.get_object()
-        new_status = self.request.data.get('status')
-
-        if new_status == 'COMPLETED' and task.status != 'COMPLETED':
-            report_text = self.request.data.get('report_text')
-            worked_hours = self.request.data.get('worked_hours')
-
-            if not report_text or not worked_hours:
-                return Response(
-                    {'error': 'Completion report and worked hours are required when marking task as completed.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            serializer.save(status=new_status)
-            CompletionReport.objects.create(
-                task=task,
-                report_text=report_text,
-                worked_hours=worked_hours
-            )
-        else:
             serializer.save()
+            return Response(serializer.data)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class CompletionReportListView(generics.ListAPIView):
-    serializer_class = TaskWithReportSerializer
-    permission_classes = [CanViewCompletionReports]
+class TaskCompletionReportView(APIView):
+    """
+    GET /tasks/{id}/report: Admins/SuperAdmins can view Completion Report and Worked Hours
+    - Only available for completed tasks
+    """
+    permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        return Task.objects.filter(status='COMPLETED')
+    def get_task(self, pk):
+        """Helper method to get task with existence check"""
+        try:
+            return Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            raise NotFound("Task not found")
+
+    def get(self, request, pk):
+        """Get completion report for a task"""
+        task = self.get_task(pk)
+
+        # Permission check - only admins/superadmins can view reports
+        if not (request.user.is_admin or request.user.is_superadmin):
+            raise PermissionDenied(
+                "Only admin users can view completion reports"
+            )
+
+        # Check if task is completed
+        if task.status != 'COMPLETED':
+            raise ValidationError(
+                {"detail": "Completion report is only available for completed tasks"}
+            )
+
+        serializer = TaskCompletionReportSerializer(task)
+        return Response(serializer.data)

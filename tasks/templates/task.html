@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Task Management System</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: #f4f6f9;
+            color: #333;
+        }
+
+        h1 {
+            color: #343a40;
+            margin-bottom: 30px;
+        }
+
+        .admin-panel-btn {
+            display: inline-block;
+            margin-bottom: 20px;
+            padding: 10px 16px;
+            background-color: #007bff;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: background-color 0.3s ease;
+        }
+
+        .admin-panel-btn:hover {
+            background-color: #0056b3;
+        }
+
+        .task {
+            background: white;
+            border-left: 6px solid #ced4da;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .task:hover {
+            transform: scale(1.01);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .pending { border-left-color: #ffc107; background-color: #fff8e1; }
+        .in-progress { border-left-color: #17a2b8; background-color: #e3f2fd; }
+        .completed { border-left-color: #28a745; background-color: #e9f7ef; }
+
+        h2 {
+            margin-top: 0;
+            font-size: 1.5em;
+        }
+
+        .status {
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .due-date {
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        .user-info, .admin-info {
+            margin-top: 15px;
+            padding: 10px 15px;
+            border-radius: 6px;
+            background: #f1f3f5;
+        }
+
+        .admin-info {
+            background: #e9ecef;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .superadmin { background: #dc3545; color: white; }
+        .admin { background: #fd7e14; color: white; }
+        .user { background: #28a745; color: white; }
+
+        .completion-box {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-left: 5px solid #6c757d;
+            border-radius: 6px;
+        }
+
+        .completion-box h4 {
+            margin-top: 0;
+        }
+
+        p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <a href="/admin/" class="admin-panel-btn">Admin Panel</a>
+
+    <h1>
+        {% if user.role == user.Role.USER %}
+             Assigned Tasks
+        {% elif user.role == user.Role.ADMIN %}
+            Tasks I Manage
+        {% else %}
+            All System Tasks
+        {% endif %}
+    </h1>
+
+    {% if tasks %}
+        {% for task in tasks %}
+            <div class="task {{ task.status|lower }}">
+                <h2>{{ task.title }}</h2>
+                <p>{{ task.description }}</p>
+
+                <div class="user-info">
+                    <strong>Assigned To:</strong>
+                    {{ task.assigned_to.username }}
+                    <span class="role-badge {{ task.assigned_to.role|lower }}">
+                        {{ task.assigned_to.get_role_display }}
+                    </span>
+                    {% if task.assigned_to.assigned_admin %}
+                        (Managed by: {{ task.assigned_to.assigned_admin.username }})
+                    {% endif %}
+                </div>
+
+                <div class="admin-info">
+                    <strong>Assigned By:</strong>
+                    {{ task.assigned_by.username }}
+                    <span class="role-badge {{ task.assigned_by.role|lower }}">
+                        {{ task.assigned_by.get_role_display }}
+                    </span>
+                </div>
+
+                <p class="status">Status: {{ task.get_status_display }}</p>
+                <p class="due-date">Due: {{ task.due_date }}</p>
+                <p>Created: {{ task.created_at }}</p>
+                <p>Last Updated: {{ task.updated_at }}</p>
+
+                {% if task.status == 'COMPLETED' %}
+                    <div class="completion-box">
+                        <h4>Completion Details:</h4>
+                        <p><strong>Report:</strong> {{ task.completion_report }}</p>
+                        <p><strong>Worked Hours:</strong> {{ task.worked_hours }}</p>
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No tasks found.</p>
+    {% endif %}
+</body>
+</html>
